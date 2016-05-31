@@ -9,7 +9,7 @@ import module namespace search = "http://marklogic.com/appservices/search"
 (: start of actual select:)
 declare function execute($stmt as node()) {
   let $_ := xdmp:log(xdmp:quote($stmt))
-  let $query := generateQuery($stmt, xdmp:function(xs:QName("select")))
+  let $query := generateQuery($stmt, xdmp:function(xs:QName("mlsqlc:execute")))
   let $hasFields := not(empty($stmt/result/*[self::type="identifier"])) 
     or $stmt/result/type = "identifier"
   let $hasFunctions := not(empty($stmt/result/*[self::type="function"]))
@@ -83,7 +83,7 @@ declare %private function select-group($stmt as node(), $query as cts:query) {
 };
 
 declare %private function identifyName($node as node()) as xs:string{
-  (string($node/alias), string($node/name))[1]
+  string(($node/alias, $node/name)[1])
 };
 
 declare %private function select-aggregate($stmt as node(), $query as cts:query) {
@@ -386,8 +386,13 @@ declare %private function prepareSimpleQuery($field as xs:string, $operation as 
 
 declare %private function buildSelectQuery($node as node(), $selectCb as xdmp:function) as cts:query {
   let $field := $node/(left|right)[type='identifier']/name
-  let $result := xdmp:apply($selectCb, $node/(left|right)[type='statement'])[1]
-  let $value := map:get($result, map:keys($result)[1])
+  let $stmt := $node/(left|right)[type='statement']
+  let $result := xdmp:apply($selectCb, $stmt)
+  let $value := for $item in $result 
+    (: document-uri is custom :)
+    let $_ := map:delete($item, "document-uri")
+    for $field in map:keys($item)
+    return map:get($item, $field)
   return prepareSimpleQuery($field, $node/operation, $value)
 };
 

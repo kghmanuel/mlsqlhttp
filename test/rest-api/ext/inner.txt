@@ -1,0 +1,6 @@
+SeLECT * 
+FROM person 
+where gender in (
+  select gender 
+  from person 
+) 
