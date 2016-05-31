@@ -1,0 +1,3 @@
+SeLECT * 
+FROM countries 
+where nationality_canonical like  'Italian' 

@@ -1,0 +1,3 @@
+SeLECT * 
+FROM countries 
+LIMIT 10 

@@ -1,0 +1,4 @@
+SeLECT * 
+FROM countries 
+limit 10 
+offset 9

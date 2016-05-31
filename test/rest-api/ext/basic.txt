@@ -1,2 +1,2 @@
 SeLECT *
-FROM documents.person
+FROM countries

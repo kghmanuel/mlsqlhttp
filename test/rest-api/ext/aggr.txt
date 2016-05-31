@@ -1,0 +1,2 @@
+select max(age), avg(age), min(age) 
+from person

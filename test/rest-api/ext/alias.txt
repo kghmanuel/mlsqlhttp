@@ -1,0 +1,3 @@
+SeLECT nationality as newName 
+FROM countries 
+limit 10
