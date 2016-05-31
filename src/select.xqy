@@ -54,7 +54,7 @@ declare %private function select-group($stmt as node(), $query as cts:query) {
   let $record := map:map()
   let $cond := cts:and-query(($query,
     for $field at $pos in $fields
-    let $_ := map:put($record, $field, $tuple[$pos]) 
+    let $_ := map:put($record, identifyName($field), $tuple[$pos]) 
     return prepareSimpleQuery($field, "=", $tuple[$pos])
   ))
   (: for any non-distinct field, retrieve first value :)
@@ -68,7 +68,7 @@ declare %private function select-group($stmt as node(), $query as cts:query) {
         if ($column/variant = 'star') then
           process-star($record, $row)
         else if ($column/variant = 'column') then
-          map:put($record, $name, $row/*[node-name() eq $name]/string())
+          map:put($record, identifyName($column), $row/*[node-name() eq $name]/string())
         else
           error((), 'Unexpected column: "'|| $column || '"')
   (: for functions, use cond :)
@@ -78,8 +78,12 @@ declare %private function select-group($stmt as node(), $query as cts:query) {
   (: for literals :)
   let $_ := 
     for $field in $stmt/result[type="literal"]
-    return map:put($record, $field/alias, $field/value)
+    return map:put($record, identifyName($field), $field/value)
   return $record 
+};
+
+declare %private function identifyName($node as node()) as xs:string{
+  (string($node/alias), string($node/name))[1]
 };
 
 declare %private function select-aggregate($stmt as node(), $query as cts:query) {
@@ -90,7 +94,7 @@ declare %private function select-aggregate($stmt as node(), $query as cts:query)
   (: for literals :)
   let $_ := 
     for $field in $stmt/result[type="literal"]
-    return map:put($record, $field/alias, $field/value)
+    return map:put($record, identifyName($field), $field/value)
   return $record 
 };
   
@@ -169,11 +173,11 @@ declare %private function buildRow($row as node(), $query as cts:query, $stmt as
            : There should be a different handling of xml and json.
            : xml has a root document object, json does not.
            :)
-          map:put($result, $name, $row//*[node-name() eq $name][1]/string())
+          map:put($result, identifyName($column), $row//*[node-name() eq $name][1]/string())
         else
           error((), 'Unexpected column: "'|| $column || '"')
       else if ($column/type = 'literal') then
-        map:put($result, $alias, $column/value)
+        map:put($result, identifyName($column), $column/value)
       else if ($column/type = 'function') then
         let $groupQuery := prepareGroupByQuery($row, $query, $stmt) 
         return processFunctions($result, $column, $groupQuery)
@@ -196,7 +200,7 @@ declare %private function processFunctions($map as map:map, $column as node(), $
       )
     , $column/args/name
     , $query)
-  return map:put($map, $alias, $result)
+  return map:put($map, identifyName($column), $result)
 };
 
 declare %private function prepareGroupByQuery($row as node(), $query as cts:query, $stmt as node()) as cts:query {
