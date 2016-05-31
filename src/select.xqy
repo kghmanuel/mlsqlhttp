@@ -8,13 +8,13 @@ import module namespace search = "http://marklogic.com/appservices/search"
 
 (: start of actual select:)
 declare function execute($stmt as node()) {
+  let $_ := xdmp:log(xdmp:quote($stmt))
   let $query := generateQuery($stmt, xdmp:function(xs:QName("select")))
   let $hasFields := not(empty($stmt/result/*[self::type="identifier"])) 
     or $stmt/result/type = "identifier"
   let $hasFunctions := not(empty($stmt/result/*[self::type="function"]))
     or $stmt/result/type = "function"
   let $hasGroup := not(empty($stmt/group)) or $stmt/distinct = true()
-  let $_ := xdmp:log(xdmp:quote($stmt))
   return 
   if ($hasGroup) then
     select-group($stmt, $query)
@@ -300,6 +300,8 @@ declare %private function convertQueryGroups($tableName as xs:string, $node as n
     cts:or-query($conditions)
   else if ($node/operation = 'and') then
     cts:and-query($conditions)
+  else if ($node/operation = 'like') then
+    cts:element-word-query(xs:QName($node/left/name), replace($node/right/value, "%", "*"))
   else if (($node/left/type/data() = 'identifier' and $node/right/type/data() = 'literal') or 
       ($node/right/type/data() = 'identifier' and $node/left/type/data() = 'literal')) then
     convertSimpleQuery($node)
