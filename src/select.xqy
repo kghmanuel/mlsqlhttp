@@ -9,9 +9,9 @@ import module namespace search = "http://marklogic.com/appservices/search"
 (: start of actual select:)
 declare function execute($stmt as node()) {
   let $query := generateQuery($stmt, xdmp:function(xs:QName("select")))
-  let $hasFields := not(empty($stmt/result/*[type="identifier"])) 
+  let $hasFields := not(empty($stmt/result/*[self::type="identifier"])) 
     or $stmt/result/type = "identifier"
-  let $hasFunctions := not(empty($stmt/result/*[type="function"]))
+  let $hasFunctions := not(empty($stmt/result/*[self::type="function"]))
     or $stmt/result/type = "function"
   let $hasGroup := not(empty($stmt/group)) or $stmt/distinct = true()
   let $_ := xdmp:log(xdmp:quote($stmt))
@@ -224,7 +224,7 @@ declare %private function count($field as xs:string, $groupByQuery as cts:query)
 };
 
 (: use of //* could result in "unpredictable" behavior later on :)
-declare %private function max($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType {
+declare %private function max($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType? {
   try {
     (: use index if available :)
     cts:max(cts:element-reference(xs:QName($field)), (), $groupByQuery)
@@ -234,7 +234,7 @@ declare %private function max($field as xs:string, $groupByQuery as cts:query) a
   }
 };
 
-declare %private function min($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType {
+declare %private function min($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType? {
   try {
     (: use index if available :)
     cts:min(cts:element-reference(xs:QName($field)), (), $groupByQuery)
@@ -244,7 +244,7 @@ declare %private function min($field as xs:string, $groupByQuery as cts:query) a
   }
 };
 
-declare %private function avg($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType {
+declare %private function avg($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType? {
   try {
     (: use index if available :)
     cts:avg-aggregate(cts:element-reference(xs:QName($field)), (), $groupByQuery)
