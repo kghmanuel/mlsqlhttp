@@ -104,6 +104,7 @@ declare %private function select-basic($stmt as node(), $query as cts:query) {
   let $sort := buildSort($stmt/order)
   let $option :=
     <options xmlns="http://marklogic.com/appservices/search">
+      <search-option>unfiltered</search-option>
       <additional-query>{$query}</additional-query>
       {$sort}
     </options>
@@ -114,13 +115,23 @@ declare %private function select-basic($stmt as node(), $query as cts:query) {
   let $results := search:search(
       ""
       , $option
-      , (xs:long($stmt/limit/start/value/data()) + 1)
-      , ($stmt/limit/offset/value)
+      , identifyStart($stmt/limit)
+      , identifyLimit($stmt/limit, $query)
     )
   for $result in $results//search:result
   let $uri := $result/@uri
   let $_ := xdmp:log("uri to process: " || xdmp:quote($uri))
   return buildRow(doc($uri), $query, $stmt)  
+};
+
+declare %private function identifyStart($limit as node()?) as xs:int {
+  xs:long(($limit/offset/value/data(), "0")[1]) + 1
+};
+
+declare %private function identifyLimit($limit as node()?, $condition as cts:query) as xs:int {
+  let $result := xs:long(($limit/start/value/data(), search:estimate($condition))[1])
+  let $_ := xdmp:log("limit estimated at: " || $result)
+  return $result
 };
 
 declare %private function buildSort($sort as node()) as node()? {
@@ -144,7 +155,6 @@ declare %private function buildSort($sort as node()) as node()? {
 
 declare %private function buildRow($row as node(), $query as cts:query, $stmt as node()) as map:map {
   let $uri := document-uri($row)
-  let $row := $row/*[1]
   let $result := map:map()
   let $_ := 
     for $column in $stmt/result
@@ -155,7 +165,11 @@ declare %private function buildRow($row as node(), $query as cts:query, $stmt as
         if ($column/variant = 'star') then
           process-star($result, $row)
         else if ($column/variant = 'column') then
-          map:put($result, $name, $row/*[node-name() eq $name]/string())
+          (:
+           : There should be a different handling of xml and json.
+           : xml has a root document object, json does not.
+           :)
+          map:put($result, $name, $row//*[node-name() eq $name][1]/string())
         else
           error((), 'Unexpected column: "'|| $column || '"')
       else if ($column/type = 'literal') then
@@ -341,7 +355,7 @@ declare %private function prepareSimpleQuery($field as xs:string, $operation as 
     else if ($newOp = '<>') then
       '!='
     else
-      $newOp 
+      $newOp
   let $tempResult := 
     try {
       (: use index if available :)
