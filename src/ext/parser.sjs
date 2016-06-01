@@ -2360,7 +2360,10 @@ module.exports = (function () {
         return util.textNode(r);
       },
       peg$c505 = function (n) {
-        return util.key(n);
+        /*
+         * Currently used only for aliases. Should not force to lower-case.
+         */
+        return util.textNode(n);
       },
       peg$c506 = "]",
       peg$c507 = {
@@ -9058,7 +9061,7 @@ module.exports = (function () {
           peg$fail(peg$c211);
         }
       }
-
+      
       return s0;
     }
 
@@ -10086,7 +10089,7 @@ module.exports = (function () {
 
     function peg$parseinsert_values_list() {
       var s0, s1, s2, s3, s4;
-
+      
       s0 = peg$currPos;
       s1 = peg$parseinsert_values();
       if (s1 !== peg$FAILED) {

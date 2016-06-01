@@ -68,7 +68,8 @@ declare %private function select-group($stmt as node(), $query as cts:query) {
         if ($column/variant = 'star') then
           process-star($record, $row)
         else if ($column/variant = 'column') then
-          map:put($record, identifyName($column), $row/*[node-name() eq $name]/string())
+          (: this makes the pick up case-insensitive, but may cause issues later on :)
+          map:put($record, identifyName($column), $row/*[lower-case(string(node-name())) eq lower-case($name)]/string())
         else
           error((), 'Unexpected column: "'|| $column || '"')
   (: for functions, use cond :)
@@ -173,7 +174,8 @@ declare %private function buildRow($row as node(), $query as cts:query, $stmt as
            : There should be a different handling of xml and json.
            : xml has a root document object, json does not.
            :)
-          map:put($result, identifyName($column), $row//*[node-name() eq $name][1]/string())
+          (: this makes the pick up case-insensitive, but may cause issues later on :)
+          map:put($result, identifyName($column), $row//*[lower-case(string(node-name())) eq lower-case($name)][1]/string())
         else
           error((), 'Unexpected column: "'|| $column || '"')
       else if ($column/type = 'literal') then
