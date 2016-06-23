@@ -10,9 +10,9 @@ import module namespace search = "http://marklogic.com/appservices/search"
 declare function execute($stmt as node()) {
   let $_ := xdmp:log(xdmp:quote($stmt))
   let $query := generateQuery($stmt, xdmp:function(xs:QName("mlsqlc:execute")))
-  let $hasFields := not(empty($stmt/result/*[self::type="identifier"])) 
+  let $hasFields := not(empty($stmt/result/*[self::type="identifier" or self::name="ifnull"])) 
     or $stmt/result/type = "identifier"
-  let $hasFunctions := not(empty($stmt/result/*[self::type="function"]))
+  let $hasFunctions := not(empty($stmt/result/*[self::type="function" and self::name!="ifnull"]))
     or $stmt/result/type = "function"
   let $hasGroup := not(empty($stmt/group)) or $stmt/distinct = true()
   return 
@@ -28,12 +28,16 @@ declare function execute($stmt as node()) {
 
 declare %private function select-group($stmt as node(), $query as cts:query) {
   let $fields := (
-    $stmt/group/expression/name
+    $stmt/group/expression
     , if ($stmt/distinct = true()) then $stmt/result[type="identifier"] else ()
+    , if ($stmt/distinct = true()) then $stmt/result[type="function" and name="ifnull"] else ()
     )
   let $refs := for $field in $fields return
     try {
-       cts:element-reference(xs:QName($field))
+       if ($field/type = 'function') then
+         cts:element-reference(xs:QName($field/args[1]/name))
+       else
+         cts:element-reference(xs:QName($field/name))
     } catch ($e) {
       error((), 'Index required for group/distinct column: "'|| $field || '"')
     }
@@ -44,25 +48,57 @@ declare %private function select-group($stmt as node(), $query as cts:query) {
    :
    : However, sort is not necessarily via group fields.
    :)
+  (: TODO: this becomes tricky since group by in sql also includes null stuff.
+   : and there is no tuple-"combination" with null values. 
+   :)
   let $tuples := cts:value-tuples($refs, ("eager"), $query)
+  let $_ := 
+    for $field in $fields
+    return
+      if ($field/type = 'function') then
+        let $count := count(cts:search(/,
+          cts:and-query(($query,
+            cts:not-query(cts:element-query(xs:QName($field/args[1]/name), cts:and-query(())) )
+          )) 
+        ))
+        return 
+          if ($count > 0) then
+            let $tuples := ($tuples, $field/args[2]/value)
+            let $_ := xdmp:log("tuples modified: " || xdmp:quote($tuples))
+            return ()
+          else ()
+      else ()
+         
   (:
    : select the first that would match per tuple
    : now how do we handle * without a definition of expected fields somewhere...
    :)
-  let $result := map:map()
   for $tuple in $tuples
   let $record := map:map()
   let $cond := cts:and-query(($query,
     for $field at $pos in $fields
+    let $name := identifyName($field)
     let $_ := map:put($record, identifyName($field), $tuple[$pos]) 
-    return prepareSimpleQuery($field, "=", $tuple[$pos])
+    let $columnSearch := 
+      if ($field/type = 'function') then
+        $field/args[1]/name
+      else
+        $field/name
+    return if ($field/type = 'function') then
+        cts:or-query((
+            prepareSimpleQuery($columnSearch, "=", $tuple[$pos])
+            , cts:not-query(cts:element-query(xs:QName($columnSearch), cts:and-query(())) )
+          ))
+      else
+        prepareSimpleQuery($columnSearch, "=", $tuple[$pos])
   ))
   (: for any non-distinct field, retrieve first value :)
   let $_ :=
     if ($stmt/distinct = true()) then () 
     else
       let $row := cts:search(/, $cond)[1]
-      for $column in $stmt/result[type="identifier"][name != $fields]
+      let $keys := map:keys($record)
+      for $column in $stmt/result[type="identifier" or (name="ifnull" and type="function")][alias != $keys]
       let $name := $column/name
       return 
         if ($column/variant = 'star') then
@@ -70,11 +106,19 @@ declare %private function select-group($stmt as node(), $query as cts:query) {
         else if ($column/variant = 'column') then
           (: this makes the pick up case-insensitive, but may cause issues later on :)
           map:put($record, identifyName($column), $row/*[lower-case(string(node-name())) eq lower-case($name)]/string())
+        else if ($column/type = 'function' and $column/name="ifnull") then
+          let $name := $column/args[1]/name
+          let $temp := map:map()
+          let $init := map:put($temp, $name, $row//*[lower-case(string(node-name())) eq lower-case($name)][1]/string())
+          let $_ := processFunctions($temp, $column, cts:true-query())
+          let $alias := identifyName($column)
+          let $value := map:get($temp, $alias)
+          return map:put($record, $alias, $value)
         else
           error((), 'Unexpected column: "'|| $column || '"')
   (: for functions, use cond :)
   let $_ := 
-    for $func in $stmt/result[type="function"]
+    for $func in $stmt/result[type="function" and name!="ifnull"]
     return processFunctions($record, $func, $cond)
   (: for literals :)
   let $_ := 
@@ -180,6 +224,14 @@ declare %private function buildRow($row as node(), $query as cts:query, $stmt as
           error((), 'Unexpected column: "'|| $column || '"')
       else if ($column/type = 'literal') then
         map:put($result, identifyName($column), $column/value)
+      else if ($column/type = 'function' and $column/name = 'ifnull') then
+        let $name := $column/args[1]/name
+        let $temp := map:map()
+        let $init := map:put($temp, $name, $row//*[lower-case(string(node-name())) eq lower-case($name)][1]/string())
+        let $_ := processFunctions($temp, $column, cts:true-query())
+        let $alias := identifyName($column)
+        let $value := map:get($temp, $alias)
+        return map:put($result, $alias, $value)
       else if ($column/type = 'function') then
         let $groupQuery := prepareGroupByQuery($row, $query, $stmt) 
         return processFunctions($result, $column, $groupQuery)
@@ -200,7 +252,8 @@ declare %private function processFunctions($map as map:map, $column as node(), $
     xdmp:function(
       xs:QName("mlsqlc:"||lower-case($column/name))
       )
-    , $column/args/name
+    , $map  
+    , $column
     , $query)
   return map:put($map, identifyName($column), $result)
 };
@@ -219,7 +272,7 @@ declare %private function prepareGroupByQuery($row as node(), $query as cts:quer
     ))
 };
 
-declare %private function count($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType {
+declare %private function count($map as map:map, $column as node(), $groupByQuery as cts:query) as xs:anyAtomicType {
   try {
     (: use index if available :)
     xdmp:estimate(cts:search(/, $groupByQuery))
@@ -229,8 +282,15 @@ declare %private function count($field as xs:string, $groupByQuery as cts:query)
   }
 };
 
+declare %private function ifnull($map as map:map, $column as node(), $groupByQuery as cts:query) as xs:anyAtomicType {
+  let $field := $column/args[1]/name
+  return (map:get($map, $field), $column/args[2]/value)[1]
+};
+
 (: use of //* could result in "unpredictable" behavior later on :)
-declare %private function max($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType? {
+declare %private function max($map as map:map, $column as node(), $groupByQuery as cts:query) as xs:anyAtomicType? {
+  let $field := $column/args/name
+  return
   try {
     (: use index if available :)
     cts:max(cts:element-reference(xs:QName($field)), (), $groupByQuery)
@@ -240,7 +300,9 @@ declare %private function max($field as xs:string, $groupByQuery as cts:query) a
   }
 };
 
-declare %private function min($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType? {
+declare %private function min($map as map:map, $column as node(), $groupByQuery as cts:query) as xs:anyAtomicType? {
+  let $field := $column/args/name
+  return
   try {
     (: use index if available :)
     cts:min(cts:element-reference(xs:QName($field)), (), $groupByQuery)
@@ -250,7 +312,9 @@ declare %private function min($field as xs:string, $groupByQuery as cts:query) a
   }
 };
 
-declare %private function avg($field as xs:string, $groupByQuery as cts:query) as xs:anyAtomicType? {
+declare %private function avg($map as map:map, $column as node(), $groupByQuery as cts:query) as xs:anyAtomicType? {
+  let $field := $column/args/name
+  return
   try {
     (: use index if available :)
     cts:avg-aggregate(cts:element-reference(xs:QName($field)), (), $groupByQuery)

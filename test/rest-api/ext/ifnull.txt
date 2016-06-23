@@ -1,0 +1,2 @@
+select ifnull(age, 0), ifnull(unknownfield, 'unknown') as unknown 
+ from person

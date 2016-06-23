@@ -1,0 +1,3 @@
+select ifnull(age, 0) as age, ifnull(unknownfield, 'unknown') as unknown, count(1) 
+ from person
+ group by age
