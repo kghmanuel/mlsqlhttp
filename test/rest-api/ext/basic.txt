@@ -1,2 +1,0 @@
-SeLECT *
- FROM countries

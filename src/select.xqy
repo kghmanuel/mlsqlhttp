@@ -7,7 +7,7 @@ import module namespace search = "http://marklogic.com/appservices/search"
      at "/MarkLogic/appservices/search/search.xqy";
 
 (: start of actual select:)
-declare function execute($stmt as node()) {
+declare function execute($stmt as node()) as map:map* {
   let $_ := xdmp:log(xdmp:quote($stmt))
   let $query := generateQuery($stmt, xdmp:function(xs:QName("mlsqlc:execute")))
   let $hasFields := not(empty($stmt/result/*[self::type="identifier" or self::name="ifnull"])) 
@@ -420,28 +420,30 @@ declare %private function prepareSimpleQuery($field as xs:string, $operation as 
    : 3. handle 'null', i.e. 'is not null' or 'is null'
    :)
   let $newOp := replace($operation, "^not\s+|\s+not$|^!", "")
-  let $not := ($operation != $newOp)
+  let $not := ($operation != $newOp) or $newOp = '<>'
   let $newOp := 
-    if ($newOp = 'in' or $newOp = 'is') then
+    if ($newOp = 'in' or $newOp = 'is' or $newOp = '<>') then
       '='
-    else if ($newOp = '<>') then
-      '!='
     else
       $newOp
   let $tempResult := 
-    try {
-      (: use index if available :)
-      let $indexTest := cts:element-reference(xs:QName($field))
-      return cts:element-range-query(xs:QName($field), $newOp, $value)
-    } catch ($noIndexEx) {
-      if ($newOp = '=' or $newOp = 'in' ) then
-        (: else, fall back to something basic :)
-        cts:element-value-query(xs:QName($field), $value)
-      else
-        (: reject if totally not possible :)
-        error((), 'Use "=" or "in" (found: "'|| $newOp ||'"), '
-          || 'or create an index for this field: ' || $field)
-    }
+    if (string(xdmp:type($value)) = "string" and $value = 'null') then
+      (: is null :)
+      cts:not-query(cts:element-query(xs:QName($field), cts:and-query(()))) 
+    else
+      try {
+        (: use index if available :)
+        let $indexTest := cts:element-reference(xs:QName($field))
+        return cts:element-range-query(xs:QName($field), $newOp, $value)
+      } catch ($noIndexEx) {
+        if ($newOp = '=' or $newOp = 'in' ) then
+          (: else, fall back to something basic :)
+          cts:element-value-query(xs:QName($field), $value)
+        else
+          (: reject if totally not possible :)
+          error((), 'Use "=" or "in" (found: "'|| $newOp ||'"), '
+            || 'or create an index for this field: ' || $field)
+      }
   let $tempResult :=
     if ($not) then
       cts:not-query($tempResult)

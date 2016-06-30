@@ -1,3 +1,0 @@
-SeLECT personid, country as cOUnTry  
-FROM address 
-limit 10

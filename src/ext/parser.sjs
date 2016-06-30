@@ -3538,7 +3538,7 @@ module.exports = (function () {
     function peg$computeLocation(startPos, endPos) {
       var startPosDetails = peg$computePosDetails(startPos),
         endPosDetails = peg$computePosDetails(endPos);
-
+        
       return {
         start: {
           offset: startPos,
@@ -7947,7 +7947,15 @@ module.exports = (function () {
               }
               if (s5 !== peg$FAILED) {
                 peg$savedPos = s0;
-                s1 = peg$c175(s1, s3, s5);
+                
+                if (s5 != null 
+                    && s5.hasOwnProperty("flip") 
+                    && s5.flip) {
+                  s1 = peg$c175(s1, s5, s3);
+                } else {
+                  s1 = peg$c175(s1, s3, s5);
+                }
+                
                 s0 = s1;
               } else {
                 peg$currPos = s0;
@@ -7990,7 +7998,10 @@ module.exports = (function () {
         s2 = peg$parseexpression();
         if (s2 !== peg$FAILED) {
           peg$savedPos = s0;
+          
+          var flip = (s1 === ",");
           s1 = peg$c177(s1, s2);
+          s1["flip"] = flip;
           s0 = s1;
         } else {
           peg$currPos = s0;
@@ -8007,7 +8018,7 @@ module.exports = (function () {
           peg$fail(peg$c176);
         }
       }
-
+      
       return s0;
     }
 

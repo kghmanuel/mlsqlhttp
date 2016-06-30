@@ -3,7 +3,7 @@ xquery version "1.0-ml";
 module namespace mlsqltrans = "http://marklogic.com/sql/result/transform";
 declare default function namespace "http://marklogic.com/sql/result/transform";
 
-declare function convert-map($map as map:map*, $format as xs:string?) {
+declare function convert-map($map as map:map*, $format as xs:string?) as document-node()? {
   let $format := lower-case($format)
   let $format := 
     if (empty($format) or not($format = ("csv", "xml", "json"))) then
